@@ -257,7 +257,7 @@ docker exec aster-production-personal-agent-1 node -e '
   process.env.HTTPS_PROXY = process.env.HTTP_PROXY = proxy.toString();
   require("node:http").setGlobalProxyFromEnv(process.env);
   fetch("http://203.0.113.2:8200/v1/sys/health", { signal: AbortSignal.timeout(5000) })
-    .then((r) => console.log("UNEXPECTED openbao health status:", r.status))
+    .then((r) => console.log("openbao health status (must not be 200):", r.status))
     .catch((e) => console.log("expected openbao health blocked:", e.cause?.code ?? e.name));
 '
 
@@ -271,7 +271,7 @@ docker exec aster-production-personal-agent-1 node -e '
   process.env.HTTPS_PROXY = process.env.HTTP_PROXY = proxy.toString();
   require("node:http").setGlobalProxyFromEnv(process.env);
   fetch("https://203.0.113.2:8200/v1/sys/health", { signal: AbortSignal.timeout(5000) })
-    .then((r) => console.log("UNEXPECTED openbao tls status:", r.status))
+    .then((r) => console.log("openbao tls status (must not be 200):", r.status))
     .catch((e) => console.log("expected openbao tls blocked:", e.cause?.code ?? e.name));
 '
 
