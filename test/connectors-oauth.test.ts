@@ -119,6 +119,8 @@ test("a stored connection still works after reopening the database", async () =>
         secrets: new FileSecretProvider(env.secretDir),
         config: env.config,
         fetch: (async () => json({ error: "must not refresh" }, 500)) as typeof fetch,
+        // The stored token was issued at NOW; a real clock would make this test expire at 01:00 UTC.
+        now: () => new Date("2026-11-18T00:00:00.000Z"),
       });
       const loaded = reopened.get("owner", "work")!;
       assert.equal(loaded.status, "connected");
