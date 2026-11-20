@@ -7,7 +7,7 @@ import { PROVIDER_IDS } from "../src/providers.js";
 const BASE = {
   id: "magpie",
   label: "magpie gateway",
-  baseUrl: "http://192.0.2.9:3425/v1",
+  baseUrl: "http://127.0.0.9:3425/v1",
   apiKeyEnv: "MAGPIE_API_KEY",
   catalog: { path: "/models" },
 };
@@ -48,7 +48,7 @@ test("a fetched entry becomes the model metadata pi-ai needs, priced per million
     name: "DeepSeek V4 Flash (latest)",
     api: "openai-completions",
     provider: "magpie",
-    baseUrl: "http://192.0.2.9:3425/v1",
+    baseUrl: "http://127.0.0.9:3425/v1",
     reasoning: true,
     input: ["text"],
     cost: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
@@ -72,11 +72,11 @@ test("the endpoint hints pick the protocol, in the declared preference order", (
   const forced = declaration({ modelDefaults: { api: "openai-responses" } });
   assert.equal(mapCatalog(catalog([messages]), forced).models[0]!.api, "openai-responses");
   // A protocol declared at its own address is fetched onto that address, not the provider's base.
-  const split = declaration({ apiBaseUrls: { "anthropic-messages": "http://192.0.2.9:3425" } });
+  const split = declaration({ apiBaseUrls: { "anthropic-messages": "http://127.0.0.9:3425" } });
   const mapped = mapCatalog(catalog([entry({ id: "claude", native_endpoints: ["/v1/messages"] }), entry({ id: "chat" })]), split);
   assert.deepEqual(mapped.models.map((model) => [model.api, model.baseUrl]), [
-    ["anthropic-messages", "http://192.0.2.9:3425"],
-    ["openai-completions", "http://192.0.2.9:3425/v1"],
+    ["anthropic-messages", "http://127.0.0.9:3425"],
+    ["openai-completions", "http://127.0.0.9:3425/v1"],
   ]);
 });
 
@@ -105,7 +105,7 @@ test("declared defaults fill only what the endpoint omits", () => {
     name: "sparse",
     api: "openai-completions",
     provider: "magpie",
-    baseUrl: "http://192.0.2.9:3425/v1",
+    baseUrl: "http://127.0.0.9:3425/v1",
     reasoning: false,
     input: ["text", "image"],
     cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
@@ -166,7 +166,7 @@ test("the catalog request is a plain authenticated GET on the provider's own bas
   const withKey = await fetchCatalogModels(declaration(), { apiKey: "key-value", fetch: stub as typeof fetch });
   assert.equal(withKey.models.length, 1);
   assert.deepEqual(seen[0], {
-    url: "http://192.0.2.9:3425/v1/models",
+    url: "http://127.0.0.9:3425/v1/models",
     method: "GET",
     authorization: "Bearer key-value",
     accept: "application/json",
@@ -175,7 +175,7 @@ test("the catalog request is a plain authenticated GET on the provider's own bas
 
   seen.length = 0;
   await fetchCatalogModels(declaration({ catalog: { path: "/v2/model-list" } }), { fetch: stub as typeof fetch });
-  assert.equal(seen[0]!.url, "http://192.0.2.9:3425/v1/v2/model-list");
+  assert.equal(seen[0]!.url, "http://127.0.0.9:3425/v1/v2/model-list");
   assert.equal(seen[0]!.authorization, undefined);
 
   seen.length = 0;

@@ -294,7 +294,7 @@ test("configuration reads a declared provider's own credential variable", () => 
   const declaration = declarationOf({
     id: "magpie",
     label: "magpie gateway",
-    baseUrl: "http://192.0.2.9:3425/v1",
+    baseUrl: "http://127.0.0.9:3425/v1",
     apiKeyEnv: "MAGPIE_API_KEY",
     catalog: { path: "/models" },
   });

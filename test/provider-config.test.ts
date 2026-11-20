@@ -9,7 +9,7 @@ import { PROVIDER_IDS } from "../src/providers.js";
 const CATALOG_ONLY = {
   id: "magpie",
   label: "magpie gateway",
-  baseUrl: "http://192.0.2.9:3425/v1",
+  baseUrl: "http://127.0.0.9:3425/v1",
   apiKeyEnv: "MAGPIE_API_KEY",
   catalog: { path: "/models" },
 };
@@ -39,13 +39,13 @@ function declared(raw: unknown = withProvider(CATALOG_ONLY)): CustomProviderDecl
 test("a declared provider keeps its stated fields and fills documented catalog defaults", () => {
   const provider = declared(withProvider({
     ...CATALOG_ONLY,
-    baseUrl: "http://192.0.2.9:3425/v1/",
+    baseUrl: "http://127.0.0.9:3425/v1/",
     models: [VALID_MODEL],
   }));
   assert.equal(provider.id, "magpie");
   assert.equal(provider.label, "magpie gateway");
   // Trailing slashes are dropped so the catalog path and inference URL join exactly.
-  assert.equal(provider.baseUrl, "http://192.0.2.9:3425/v1");
+  assert.equal(provider.baseUrl, "http://127.0.0.9:3425/v1");
   assert.equal(provider.apiKeyEnv, "MAGPIE_API_KEY");
   assert.deepEqual(provider.catalog, {
     path: "/models",
@@ -90,10 +90,10 @@ test("plain HTTP is allowed only where the address cannot leave the host or its 
   for (const baseUrl of [
     "http://localhost:3425/v1",
     "http://127.0.0.1:3425/v1",
-    "http://192.0.2.9:3425/v1",
-    "http://198.51.100.9:3425/v1",
-    "http://192.0.2.4:3425/v1",
-    "http://192.0.2.123:3425/v1",
+    "http://127.0.0.9:3425/v1",
+    "http://127.0.1.9:3425/v1",
+    "http://127.0.0.4:3425/v1",
+    "http://127.0.0.123:3425/v1",
     "http://[::1]:3425/v1",
     "http://models.internal.example",
   ]) {
@@ -111,11 +111,11 @@ test("plain HTTP is allowed only where the address cannot leave the host or its 
 });
 
 test("baseUrl and credential names are validated before anything reaches the network", () => {
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "192.0.2.9:3425/v1" }))!, /absolute URL/);
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "ftp://192.0.2.9/v1" }))!, /must use https: or http:/);
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://user:pass@192.0.2.9:3425/v1" }))!, /must not embed credentials/);
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://192.0.2.9:3425/v1?x=1" }))!, /query or fragment/);
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://192.0.2.9:3425/v1#f" }))!, /query or fragment/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "127.0.0.9:3425/v1" }))!, /absolute URL/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "ftp://127.0.0.9/v1" }))!, /must use https: or http:/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://user:pass@127.0.0.9:3425/v1" }))!, /must not embed credentials/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://127.0.0.9:3425/v1?x=1" }))!, /query or fragment/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, baseUrl: "http://127.0.0.9:3425/v1#f" }))!, /query or fragment/);
   assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiKeyEnv: "magpieKey" }))!, /environment variable name/);
   assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiKeyEnv: "" }))!, /non-empty string/);
 });
@@ -123,21 +123,21 @@ test("baseUrl and credential names are validated before anything reaches the net
 test("a provider states a separate address only for the protocols that need one", () => {
   const provider = declared(withProvider({
     ...CATALOG_ONLY,
-    apiBaseUrls: { "anthropic-messages": "http://192.0.2.9:3425/", "google-generative-ai": "https://models.example.com/v1beta" },
+    apiBaseUrls: { "anthropic-messages": "http://127.0.0.9:3425/", "google-generative-ai": "https://models.example.com/v1beta" },
   }));
   assert.deepEqual(provider.apiBaseUrls, {
-    "anthropic-messages": "http://192.0.2.9:3425",
+    "anthropic-messages": "http://127.0.0.9:3425",
     "google-generative-ai": "https://models.example.com/v1beta",
   });
   // Every other protocol keeps the provider's own base URL.
-  assert.equal(modelBaseUrl(provider, "anthropic-messages"), "http://192.0.2.9:3425");
+  assert.equal(modelBaseUrl(provider, "anthropic-messages"), "http://127.0.0.9:3425");
   assert.equal(modelBaseUrl(provider, "openai-completions"), provider.baseUrl);
   assert.equal(modelBaseUrl(declared(), "anthropic-messages"), provider.baseUrl);
   // The addresses obey the same policy as the base URL itself.
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "anthropic-messages": "192.0.2.9:3425" } }))!, /absolute URL/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "anthropic-messages": "127.0.0.9:3425" } }))!, /absolute URL/);
   assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "anthropic-messages": "http://api.example.com" } }))!, /only for a loopback or private address/);
   assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: {} }))!, /non-empty object keyed by protocol/);
-  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "openai-chat": "http://192.0.2.9:3425" } }))!, /unknown key openai-chat.*expected one of/);
+  assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "openai-chat": "http://127.0.0.9:3425" } }))!, /unknown key openai-chat.*expected one of/);
   assert.match(errorOf(withProvider({ ...CATALOG_ONLY, apiBaseUrls: { "anthropic-messages": "" } }))!, /non-empty string/);
 });
 
