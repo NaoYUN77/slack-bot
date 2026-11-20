@@ -2,7 +2,11 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Node.js](https://img.shields.io/badge/Node.js-24.19.0-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![Telegram](https://img.shields.io/badge/Telegram-grammY_1.46.0-26A5E4?logo=telegram&logoColor=white)](https://grammy.dev/) ![Slack](https://img.shields.io/badge/Slack-Socket_Mode-4A154B?logo=slack&logoColor=white) [![SQLite](https://img.shields.io/badge/SQLite-node:sqlite-003B57?logo=sqlite&logoColor=white)](https://nodejs.org/api/sqlite.html) [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/) ![MCP](https://img.shields.io/badge/MCP-pi--mcp_1.5.0-111111) [![pi-durable](https://img.shields.io/badge/pi--durable-1.5.0-5c4ee5)](https://www.npmjs.com/package/@earendil-works/pi-durable) [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 
-个人 AI agent：所有者通过私聊使用；Slack 下还可以在**白名单频道**里当团队助手——@ 它提问、在它的回复下追问，每位成员一个独立会话（Hub）。消息在可恢复的 durable 执行环境里运行 agent 与工具，再把回复分段送回。渠道二选一：Telegram 长轮询或 Slack Socket Mode。它有长期记忆、能接入 MCP 工具，面向一台小规格云服务器长期运行。
+个人 AI agent：所有者通过私聊使用；Slack 下还可以在**白名单频道**里当团队助手——@ 它提问、在它的回复下追问，每位成员一个独立会话（Hub）。消息在可恢复的 durable 执行环境里运行 agent 与工具，再把回复分段送回。本分叉只提供 Slack Socket Mode 通道。它有长期记忆、能接入 MCP 工具，面向一台小规格云服务器长期运行。
+
+> **本仓库是 Aster 的 Slack 分叉。** 保留 Slack 通道（Socket Mode）、reactions、style、hubs 与后端
+> agent 运行时；移除了 Web/PWA、Tauri、Capacitor 三端客户端以及它们的 Fastify REST/SSE 接入层、
+> Web 登录口令与相关构建/CI/文档。入口只以 Slack 通道启动，运行前必须设置 `CHANNEL=slack`。
 
 下面描述当前可用能力。
 
@@ -10,11 +14,11 @@
 
 ## 架构
 
-一条消息的路径：渠道收件（Telegram 长轮询或 Slack Socket Mode）→ 入向策略（白名单、身份只取传输层参数、@/线程判定）→ 收件箱落盘（含线程锚点）→ 路由到一个会话（所有者的 root 会话、成员自己的 Hub、或线程的 fork）→ 记忆层组装上下文 → 模型层调用提供商 → 工具层执行 → 回复落盘后带线程锚点分段发送。
+一条消息的路径：渠道收件（Slack Socket Mode）→ 入向策略（白名单、身份只取传输层参数、@/线程判定）→ 收件箱落盘（含线程锚点）→ 路由到一个会话（所有者的 root 会话、成员自己的 Hub、或线程的 fork）→ 记忆层组装上下文 → 模型层调用提供商 → 工具层执行 → 回复落盘后带线程锚点分段发送。
 
 ```mermaid
 flowchart TB
-  subgraph channels["渠道入口（CHANNEL 二选一，一个进程只服务一个）"]
+  subgraph channels["渠道入口（本分叉只启动 Slack）"]
     slack["Slack（Socket Mode）<br/>单聊 / 白名单频道 @bot / 线程追问"]
     telegram["Telegram（长轮询）<br/>仅所有者私聊"]
   end
@@ -40,7 +44,7 @@ flowchart TB
 | 层 | 职责 | 主要文件 |
 | --- | --- | --- |
 | 入口与部署 | 组合接线、部署渲染、环境预检、发布清单 | `src/main.ts`、`src/deployment-*.ts`、`src/release-*.ts` |
-| 渠道 | 二选一的消息通道：Telegram 长轮询或 Slack Socket Mode；单聊只服务所有者，Slack 还接白名单频道里的 @ 与会话线程；持久化收件箱（offset 检查点、线程锚点、分段投递与对账）与共享的投递/失败分类（`src/channel.ts`） | `src/telegram.ts`、`src/slack.ts`、`src/channel.ts`、`src/inbox.ts` |
+| 渠道 | Slack Socket Mode：单聊只服务所有者，白名单频道里接 @ 与会话线程；持久化收件箱（offset 检查点、线程锚点、分段投递与对账）与共享的投递/失败分类（`src/channel.ts`） | `src/slack.ts`、`src/channel.ts`、`src/inbox.ts` |
 | 团队 Hub | 成员 ↔ 会话映射、线程 ↔ fork 记账与回合上限；一人一个 Hub 的隔离边界 | `src/hubs.ts` |
 | 运行时 | 基于 pi-durable 的 Session：durable 执行、checkpoint、replay 恢复；按请求选择会话（root / Hub / fork） | `src/agent.ts` |
 | 记忆 | 归档、工作状态、压缩、上下文规划与快照、生命周期接入与记忆工具；store 按会话解析，因此每人一份 | `src/memory/` |
@@ -97,7 +101,7 @@ flowchart TB
 
 ## 快速开始
 
-需要 Node.js 24.19.0+，以及可访问 Telegram 与所选模型服务的网络。
+需要 Node.js 24.19.0+，以及可访问 Slack（`slack.com` 与 Socket Mode）与所选模型服务的网络。
 
 ```sh
 npm ci
@@ -113,8 +117,8 @@ npm start
 
 `.env` 必填项：
 
-- `CHANNEL`（可选，默认 `telegram`）：当前生效的渠道，`telegram` 或 `slack`。只要求所选渠道自己的变量，另一个渠道的变量会被忽略。
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_ID`：`CHANNEL=telegram` 时必填，BotFather 创建的 bot token 与允许使用 bot 的个人数字用户 ID。
+- `CHANNEL`：本分叉的入口只启动 Slack 通道；`telegram` 代码与测试仍保留，但入口会拒绝启动。Telegram 变量会被忽略。
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_ID`：本分叉不再启动 Telegram，这两项可忽略（代码与测试仍保留）。
 - `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `SLACK_OWNER_ID`：`CHANNEL=slack` 时必填。
 - `SLACK_ALLOWED_USERS` / `SLACK_ALLOWED_CHANNELS`（可选）：允许在频道里驱动 bot 的成员与允许回话的频道；空着就是只服务所有者单聊。
 - `MODEL_PROVIDER` / `MODEL_ID`：内置注册表内的提供商 id，或 `DATA_DIR/providers.json` 里声明的自定义 provider id，以及该提供商目录中的模型 id。写错时启动前报错并列出示例，不自动替换。

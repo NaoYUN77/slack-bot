@@ -5,10 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { readConnectorsConfig } from "../src/config.js";
 import { encryptCredential } from "../src/connectors/crypto.js";
-import type { EventHub } from "../src/http/events.js";
 import { ConnectorOAuth } from "../src/connectors/oauth.js";
 import { FileSecretProvider } from "../src/connectors/secrets.js";
-import { ConnectorService } from "../src/connectors/service.js";
+import { ConnectorService, type ConnectorEventSink } from "../src/connectors/service.js";
 import { ConnectorStore, type ConnectorConnection } from "../src/connectors/store.js";
 import { LocalTokenVault } from "../src/connectors/vault.js";
 
@@ -47,7 +46,7 @@ async function setup(fetchImpl: typeof fetch) {
   const events: { event: string; data: unknown }[] = [];
   const hub = {
     broadcast(event: string, data: unknown) { events.push({ event, data }); },
-  } as unknown as EventHub;
+  } as unknown as ConnectorEventSink;
   const service = new ConnectorService({
     store, oauth, vault, config, ownerId: "owner", dataDir: directory, hub, fetch: fetchImpl, log: () => {},
     now: () => new Date(NOW),

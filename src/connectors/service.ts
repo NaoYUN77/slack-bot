@@ -1,7 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { McpStdioServerConfig } from "../mcp-config.js";
 import type { ConnectorsConfig } from "../config.js";
-import type { EventHub } from "../http/events.js";
 import { CredentialBroker, type CredentialBinding } from "./broker.js";
 import { ConnectorError, connectorCode } from "./errors.js";
 import { GmailClient } from "./gmail.js";
@@ -22,6 +21,11 @@ import {
 } from "./store.js";
 import type { TokenVault } from "./vault.js";
 
+/** Host sink for connection changes; the web adapter used to be the only consumer. */
+export type ConnectorEventSink = {
+  broadcast(event: string, data: unknown): void;
+};
+
 export type ConnectorServiceOptions = {
   readonly store: ConnectorStore;
   readonly oauth: ConnectorOAuth;
@@ -29,7 +33,7 @@ export type ConnectorServiceOptions = {
   readonly config: ConnectorsConfig;
   readonly ownerId: string;
   readonly dataDir: string;
-  readonly hub?: EventHub;
+  readonly hub?: ConnectorEventSink;
   readonly fetch?: typeof fetch;
   readonly log?: (line: string) => void;
   readonly now?: () => Date;
@@ -51,7 +55,7 @@ export class ConnectorService {
   readonly #config: ConnectorsConfig;
   readonly #ownerId: string;
   readonly #dataDir: string;
-  readonly #hub: EventHub | undefined;
+  readonly #hub: ConnectorEventSink | undefined;
   readonly #broker = new CredentialBroker();
   readonly #github: GithubClient;
   readonly #gmail: GmailClient;

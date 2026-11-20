@@ -42,7 +42,7 @@ import {
   type HistoryPage,
   type HostMessageSource,
   type UiMessage,
-} from "./http/projection.js";
+} from "./projection.js";
 import {
   createModelPool,
   PROVIDER_IDS,
@@ -60,50 +60,6 @@ import { installMcpTools, orderedMcpExtensions } from "./tool-pins.js";
 const context = BACKGROUND_CONTEXT;
 // Failures the request can recover from in-process; anything else thrown by the durable calls means the Session is unusable.
 const requestFailureCodes = new Set(["AGENT_TIMEOUT", "AGENT_UNANSWERED", "AGENT_TRUNCATED", "EMPTY_REPLY", "AGENT_LOOP_DETECTED", "MODEL_UNAVAILABLE", "MODEL_INCOMPATIBLE"]);
-/** Bookkeeping entry whose edits keep an interrupted turn out of the model context. */
-const INTERRUPTED_TURN_ENTRY = "web.turn-discarded";
-
-/**
- * After a stop, the user's input is already durable but its answer never will be. Durable's context
- * builder already omits the aborted assistant entry; without this, the unanswered question would
- * join the next request and the model could answer both. Append a context-only edit that omits
- * every model-visible entry of the interrupted turn. History still shows that the user wrote it.
- */
-async function discardInterruptedTurn(
-  target: Conversation,
-  submission: Submission,
-  requestId: string,
-): Promise<void> {
-  try {
-    const record = await submission.status(context);
-    // Only an input that became terminal without an answer is an interrupted turn. A run that
-    // managed to commit its answer before the stop is kept, exactly as history shows it.
-    if (record.status !== "unanswered" || record.entry === undefined) return;
-    const first = record.entry;
-    const omitted: EntryId[] = [];
-    let cursor: Cursor | undefined;
-    do {
-      const page = await target.entries({ order: "ascending", minEntryId: first }, 200, cursor, context);
-      for (const entry of page.items) {
-        // Keep system/prompt and head-marker entries: only this turn's messages and tool traffic
-        // are removed from context.
-        if (entry.id >= first && (UserEntry.is(entry) || AssistantEntry.is(entry) || ToolResultEntry.is(entry))) {
-          omitted.push(entry.id);
-        }
-      }
-      cursor = page.next;
-    } while (cursor !== undefined && omitted.length < 10_000);
-    if (omitted.length === 0) return;
-    await target.commit((tx) => tx.appendEntry(target.id, {
-      kind: INTERRUPTED_TURN_ENTRY,
-      data: { requestId },
-      edits: omitted.map((entry) => ({ target: entry, action: "omit" as const })),
-    }), context);
-    console.info(`Discarded interrupted turn ${requestId} from the next model context`);
-  } catch (error) {
-    console.error(`Could not discard interrupted turn ${requestId}: ${errorCode(error)}`);
-  }
-}
 /**
  * What a member's Hub is not offered, by capability rather than by name: both shells are the same
  * ability on a different host, and the reminder tools are withheld because their target is fixed to
@@ -763,9 +719,6 @@ export async function openAgent(
           // Cancelling a wait alone does not cancel the durable run.
           if (!signal.aborted && waitSignal.aborted) {
             await target.abort(context);
-            if (config.channel.kind === "web") {
-              await discardInterruptedTurn(target, submission, request.requestId);
-            }
             throw Object.assign(new Error("Agent request timed out", { cause: error }), { code: "AGENT_TIMEOUT" });
           }
           throw error;
@@ -811,13 +764,8 @@ export async function openAgent(
         requestTrace?.end(requestOutcome(error, signal), { errorCode: requestErrorCode(error) });
         // A host shutdown stops this wait without failing the Session; keep the original abort reason.
         if (signal.aborted) {
-          // Only the web adapter has a user-initiated stop. Chat channels keep their shutdown
-          // semantics untouched: throw at once and let recovery settle the interrupted run.
-          if (config.channel.kind !== "web") throw error;
-          await target.abort(context).catch((abortError: unknown) => {
-            console.error(`Could not stop the interrupted run: ${errorCode(abortError)}`);
-          });
-          if (submission !== undefined) await discardInterruptedTurn(target, submission, request.requestId);
+          // Chat channels keep their shutdown semantics untouched: throw at once and let recovery
+          // settle the interrupted run.
           throw error;
         }
         const code = (error as { code?: unknown } | null)?.code;

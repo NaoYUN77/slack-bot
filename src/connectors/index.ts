@@ -1,11 +1,10 @@
 import { join } from "node:path";
 import { ConfigurationError, type ConnectorsConfig } from "../config.js";
-import type { EventHub } from "../http/events.js";
 import { BrokerClient } from "./broker-client.js";
 import { migrateLocalCredentials, type MigrationResult } from "./migrate.js";
 import { ConnectorOAuth } from "./oauth.js";
 import { CfSecretProvider, FileSecretProvider, type SecretProvider } from "./secrets.js";
-import { ConnectorService } from "./service.js";
+import { ConnectorService, type ConnectorEventSink } from "./service.js";
 import { ConnectorStore } from "./store.js";
 import { BrokerTokenVault, LocalTokenVault, type TokenVault } from "./vault.js";
 
@@ -13,7 +12,7 @@ export type OpenConnectorsOptions = {
   readonly dataDir: string;
   readonly ownerId: string;
   readonly config: ConnectorsConfig;
-  readonly hub?: EventHub;
+  readonly hub?: ConnectorEventSink;
   readonly fetch?: typeof fetch;
   readonly now?: () => Date;
 };

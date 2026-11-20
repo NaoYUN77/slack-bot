@@ -1,6 +1,6 @@
 import { contentText, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { AssistantEntry, ToolResultEntry, UserEntry, type EntryRecord } from "@earendil-works/pi-durable";
-import { MODEL_INCOMPATIBLE_MESSAGE, MODEL_UNAVAILABLE_MESSAGE } from "../model-failover.js";
+import { MODEL_INCOMPATIBLE_MESSAGE, MODEL_UNAVAILABLE_MESSAGE } from "./model-failover.js";
 
 /**
  * Projection from the durable transcript to the UI message shape.

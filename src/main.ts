@@ -13,7 +13,6 @@ import { ReminderScheduler, ReminderStore } from "./reminders.js";
 import { resolveOptionalEnvSecrets } from "./secret-env.js";
 import { REACTIONS_READ_SCOPE, serveSlack, SlackClient, styleStartupLine } from "./slack.js";
 import { StyleLearning, StyleStore } from "./style.js";
-import { serveTelegram, TelegramClient } from "./telegram.js";
 import { SkillIndex } from "./skills.js";
 import { SqliteRoutineStore } from "./routines/store.js";
 import { createRoutinesExtension } from "./routines/tools.js";
@@ -21,8 +20,9 @@ import { createRoutines as createRoutinesRuntime, type RoutinesRuntime } from ".
 import { startTrace, type TraceRuntime } from "./trace.js";
 import { createWatchers, type WatchersRuntime } from "./watchers/index.js";
 import { SqliteWatchStore } from "./watchers/store.js";
-import { runWebMode } from "./http/run-web.js";
 
+// This fork serves the Slack channel only. The Telegram module remains a separate channel, but the
+// entry point no longer switches channels, so there is exactly one startup path below.
 const shutdown = new AbortController();
 process.once("SIGINT", () => shutdown.abort());
 process.once("SIGTERM", () => shutdown.abort());
@@ -47,43 +47,34 @@ try {
   const config = readConfig(env, providerConfig.providers);
   // Tracing is auxiliary: absent keys or an exporter failure must not stop the bot.
   trace = startTrace(config.trace);
-  if (config.channel.kind === "web") {
-    // One owner, one conversation: no bot identity, no Inbox polling, and no HubStore. The adapter
-    // owns its own SQLite file under the same (independent) DATA_DIR.
-    await runWebMode(config, shutdown.signal);
-  } else {
+  if (config.channel.kind !== "slack") {
+    throw new ConfigurationError("This Slack bot fork requires CHANNEL=slack");
+  }
   // A Slack deployment carries an inbound policy — who may drive the bot and where — read from
-  // configuration once, so no channel event can widen its own access. Telegram has no counterpart.
-  const deployment = config.channel.kind === "slack"
-    ? {
-        kind: "slack" as const,
-        client: new SlackClient({
-          botToken: config.channel.botToken,
-          appToken: config.channel.appToken,
-          ownerId: config.channel.ownerId,
-        }),
-        policy: {
-          ownerId: config.channel.ownerId,
-          allowedUsers: config.channel.allowedUsers,
-          allowedChannels: config.channel.allowedChannels,
-          log: (line: string) => console.error(line),
-        },
-        // The one slot a reaction is aimed through: the delivery loop writes it for the request it is
-        // answering, and the model's reaction tool only reads it. The per-message budget lives here
-        // too, so a fresh request always starts with a full one.
-        anchor: new ReactionAnchor({ limit: config.channel.maxReactions }),
-        receipts: config.channel.receipts,
-      }
-    : {
-        kind: "telegram" as const,
-        client: new TelegramClient(config.channel.token, config.channel.apiRoot),
-      };
+  // configuration once, so no channel event can widen its own access.
+  const deployment = {
+    kind: "slack" as const,
+    client: new SlackClient({
+      botToken: config.channel.botToken,
+      appToken: config.channel.appToken,
+      ownerId: config.channel.ownerId,
+    }),
+    policy: {
+      ownerId: config.channel.ownerId,
+      allowedUsers: config.channel.allowedUsers,
+      allowedChannels: config.channel.allowedChannels,
+      log: (line: string) => console.error(line),
+    },
+    // The one slot a reaction is aimed through: the delivery loop writes it for the request it is
+    // answering, and the model's reaction tool only reads it. The per-message budget lives here
+    // too, so a fresh request always starts with a full one.
+    anchor: new ReactionAnchor({ limit: config.channel.maxReactions }),
+    receipts: config.channel.receipts,
+  };
   // The workspace's own emoji names come from Slack and nowhere else: this is what lets the model use
   // the team's uploads instead of only the standard set. Slack refuses the call without `emoji:read`,
   // and the tool reports that rather than the run failing.
-  const emoji = deployment.kind === "slack"
-    ? { source: { list: (signal: AbortSignal) => deployment.client.emojiList(signal) } }
-    : undefined;
+  const emoji = { source: { list: (signal: AbortSignal) => deployment.client.emojiList(signal) } };
   const channel = deployment.client;
   const botId = await channel.identity(shutdown.signal);
   await mkdir(config.dataDir, { recursive: true });
@@ -104,7 +95,7 @@ try {
       ? undefined
       : new ReminderStore(join(config.dataDir, "reminders.sqlite"), { limits: config.reminders });
     inbox = new Inbox(join(config.dataDir, "inbox.sqlite"));
-    // The data directory remembers one bot per channel, so switching CHANNEL keeps the conversation.
+    // The data directory remembers the bot identity, so a restart keeps the conversation.
     inbox.bindIdentity(config.channel.kind, botId, config.channel.ownerId);
     inbox.recover();
     // A sending row may already have reached the channel; recovery records it as uncertain instead of resending.
@@ -139,19 +130,19 @@ try {
           config: config.routines,
           chatId: config.channel.ownerId,
         });
-    // One Hub per member is a shared-channel idea: a Slack deployment gets the bookkeeping, Telegram
-    // stays single-owner. The data directory keeps the member mappings across restarts.
-    hubs = deployment.kind === "slack" ? new HubStore(join(config.dataDir, "hubs.sqlite")) : undefined;
+    // One Hub per member is a shared-channel idea; the bookkeeping lives in the data directory and
+    // keeps the member mappings across restarts.
+    hubs = new HubStore(join(config.dataDir, "hubs.sqlite"));
     // Reaction feedback is possible only where Slack delivers reaction events, and that is decided by
     // the scope Slack granted — configuration can only choose what this process does with them.
-    const scopes = deployment.kind === "slack" ? await deployment.client.scopes(shutdown.signal) : [];
+    const scopes = await deployment.client.scopes(shutdown.signal);
     const canReact = scopes.includes(REACTIONS_READ_SCOPE);
     // Printed whether or not the feature is on: a deployment that enabled it without the scope has to
     // be told it is inert, not left with silence nobody can explain.
     console.info(styleStartupLine(config.style.mode, canReact));
     // No scope means no events, so nothing is opened and every reaction frame is acknowledged and
     // forgotten. With a scope, `observe` records and `ask` also sends one bounded question.
-    const styleStore = config.style.mode !== "off" && canReact
+    styleStore = config.style.mode !== "off" && canReact
       ? new StyleStore(join(config.dataDir, "style.sqlite"))
       : undefined;
     const learning = new StyleLearning({
@@ -173,9 +164,7 @@ try {
             ],
           }),
       ...(skills === undefined ? {} : { skills }),
-      ...(deployment.kind === "slack"
-        ? { reactions: { host: deployment.client, anchor: deployment.anchor, emoji } }
-        : {}),
+      reactions: { host: deployment.client, anchor: deployment.anchor, emoji },
     }, { signal: shutdown.signal }));
     const scheduler = reminders === undefined ? undefined : new ReminderScheduler({
       store: reminders,
@@ -202,10 +191,10 @@ try {
     watchers?.start();
     routines?.start();
     try {
-      console.info(deployment.kind === "telegram"
-        ? `Personal agent starting; single-owner private ${channel.label} messages enabled.`
-        : `Personal agent starting; the owner's DM and ${deployment.policy.allowedUsers.length} allowed`
-          + ` member(s) in ${deployment.policy.allowedChannels.length} allowed channel(s) enabled.`);
+      console.info(
+        `Personal agent starting; the owner's DM and ${deployment.policy.allowedUsers.length} allowed`
+        + ` member(s) in ${deployment.policy.allowedChannels.length} allowed channel(s) enabled.`,
+      );
       if (skills !== undefined) {
         console.info(`Skills: ${skills.summaries().length} indexed (names and descriptions only; bodies load on demand).`);
       }
@@ -213,24 +202,20 @@ try {
         const routineSettings = config.routines;
         console.info(`Standing tasks: ${routineSettings.paused ? "paused by ROUTINES_PAUSED=1" : "active"}, timezone ${routineSettings.timezone}.`);
       }
-      if (deployment.kind === "slack") {
-        const slackPolicy = { ...deployment.policy, botId };
-        // Captured as a const so the closure below keeps the narrowed handle.
-        const delivered = inbox;
-        await serveSlack(slackPolicy, inbox, agent.reply, shutdown.signal, deployment.client, {
-          receipts: deployment.receipts,
-          reactions: { host: deployment.client, anchor: deployment.anchor },
-          ...(styleStore === undefined ? {} : {
-            style: {
-              // Who asked the reacted-to reply comes from the Inbox, never from the payload.
-              policy: { ...slackPolicy, attribute: (messageId: string) => delivered.attributedByMessageId(messageId) },
-              learning,
-            },
-          }),
-        });
-      } else {
-        await serveTelegram(config.channel.ownerId, botId, inbox, agent.reply, shutdown.signal, deployment.client);
-      }
+      const slackPolicy = { ...deployment.policy, botId };
+      // Captured as a const so the closure below keeps the narrowed handle.
+      const delivered = inbox;
+      await serveSlack(slackPolicy, inbox, agent.reply, shutdown.signal, deployment.client, {
+        receipts: deployment.receipts,
+        reactions: { host: deployment.client, anchor: deployment.anchor },
+        ...(styleStore === undefined ? {} : {
+          style: {
+            // Who asked the reacted-to reply comes from the Inbox, never from the payload.
+            policy: { ...slackPolicy, attribute: (messageId: string) => delivered.attributedByMessageId(messageId) },
+            learning,
+          },
+        }),
+      });
     } finally {
       // Stop proactive sends before the agent and databases close; an in-flight send becomes uncertain.
       await routines?.stop();
@@ -245,7 +230,6 @@ try {
     routinesStore?.close();
     hubs?.close();
     styleStore?.close();
-  }
   }
 } catch (error) {
   if (!shutdown.signal.aborted) {

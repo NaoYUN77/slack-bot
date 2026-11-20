@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import type { ConversationId, EntryId, EntryRecord } from "@earendil-works/pi-durable";
-import { projectEntry, projectEntries, WEB_HOST_MESSAGE_KIND } from "../src/http/projection.js";
+import { projectEntry, projectEntries, WEB_HOST_MESSAGE_KIND } from "../src/projection.js";
 
 const conversationId = 1 as ConversationId;
 const usage: Usage = {

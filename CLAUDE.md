@@ -25,4 +25,4 @@
 
 模型提供商：`src/providers.ts` 的 `PROVIDERS` 是编译期内置名单，共 12 家——`anthropic`、`openai`、`deepseek`、`google`、`xai`、`mistral`、`groq`、`moonshotai`、`moonshotai-cn`、`minimax`、`zai`、`openrouter`；每家用 `apiKeyEnv` 指向单个显式 API key。自建 OpenAI 兼容网关由 `DATA_DIR/providers.json` 声明，底层用 pi-ai 的 `createProvider()`／`envApiKeyAuth()`。
 
-消息渠道：`CHANNEL` 二选一（默认 `telegram`），同一进程只服务一个渠道。投递契约在 `src/channel.ts`，两个适配层 `src/telegram.ts`（长轮询）与 `src/slack.ts`（Socket Mode）各自实现。Slack 侧不新增依赖：只用 Node 内置的 `fetch` 与 `WebSocket`。
+消息渠道：本 Slack 分叉的入口只启动 Slack（`CHANNEL=slack`，Socket Mode）；`src/telegram.ts` 保留为独立通道模块，但 `src/main.ts` 不再选择它。投递契约在 `src/channel.ts`，Slack 适配层在 `src/slack.ts`。三端 Web/PWA、Tauri、Capacitor 客户端与 `src/http/` 接入层已移除。Slack 侧不新增依赖：只用 Node 内置的 `fetch` 与 `WebSocket`。
